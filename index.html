@@ -1,1 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Google Sheet Search Grid</title>
 
+<style>
+    body{
+        margin:0;
+        padding:15px;
+        font-family:Arial, sans-serif;
+        background:#f5f5f5;
+    }
+
+    .table-wrap{
+        width:100%;
+        overflow:auto;
+        background:#fff;
+        border:1px solid #ccc;
+    }
+
+    table{
+        width:100%;
+        border-collapse:collapse;
+        min-width:700px;
+    }
+
+    th, td{
+        border:1px solid #d0d0d0;
+        padding:8px;
+        text-align:left;
+        white-space:nowrap;
+    }
+
+    th{
+        background:#f0f0f0;
+        position:sticky;
+        top:0;
+        z-index:2;
+    }
+
+    .filter-row input{
+        width:100%;
+        box-sizing:border-box;
+        padding:6px;
+        border:1px solid #bbb;
+        outline:none;
+    }
+
+    .filter-row input:focus{
+        border-color:#1976d2;
+    }
+
+    tr:nth-child(even) td{
+        background:#fafafa;
+    }
+
+    .loading{
+        padding:20px;
+        text-align:center;
+    }
+</style>
+</head>
+
+<body>
+
+<div class="table-wrap">
+    <table id="sheetTable">
+        <thead id="thead"></thead>
+        <tbody id="tbody">
+            <tr>
+                <td class="loading">Loading...</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<script>
+
+// GOOGLE SHEET CSV LINK
+// Replace gid if needed
+const sheetUrl =
+'https://docs.google.com/spreadsheets/d/1iKSsjRrfpAEYwhMDqV_Xv_AFUc-fnvlc/export?format=csv';
+
+let originalData = [];
+let headers = [];
+
+async function loadSheet() {
+
+    const response = await fetch(sheetUrl);
+    const csvText = await response.text();
+
+    const rows = parseCSV(csvText);
+
+    headers = rows[0];
+    originalData = rows.slice(1);
+
+    createTable();
+}
+
+function parseCSV(text) {
+
+    const rows = [];
+    let row = [];
+    let cell = '';
+    let insideQuotes = false;
+
+    for (let i = 0; i < text.length; i++) {
+
+        const char = text[i];
+        const next = text[i + 1];
+
+        if (char === '"') {
+
+            if (insideQuotes && next === '"') {
+                cell += '"';
+                i++;
+            } else {
+                insideQuotes = !insideQuotes;
+            }
+
+        } else if (char === ',' && !insideQuotes) {
+
+            row.push(cell);
+            cell = '';
+
+        } else if ((char === '\n' || char === '\r') && !insideQuotes) {
+
+            if (cell !== '' || row.length > 0) {
+                row.push(cell);
+                rows.push(row);
+                row = [];
+                cell = '';
+            }
+
+        } else {
+
+            cell += char;
+        }
+    }
+
+    if (cell !== '' || row.length > 0) {
+        row.push(cell);
+        rows.push(row);
+    }
+
+    return rows;
+}
+
+function createTable() {
+
+    const thead = document.getElementById('thead');
+    const tbody = document.getElementById('tbody');
+
+    thead.innerHTML = '';
+    tbody.innerHTML = '';
+
+    // HEADER ROW
+    const headerRow = document.createElement('tr');
+
+    headers.forEach(h => {
+        const th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+
+    thead.appendChild(headerRow);
+
+    // FILTER ROW
+    const filterRow = document.createElement('tr');
+    filterRow.className = 'filter-row';
+
+    headers.forEach((h, index) => {
+
+        const th = document.createElement('th');
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = 'Search';
+
+        input.addEventListener('input', filterData);
+
+        th.appendChild(input);
+        filterRow.appendChild(th);
+    });
+
+    thead.appendChild(filterRow);
+
+    renderRows(originalData);
+}
+
+function renderRows(data) {
+
+    const tbody = document.getElementById('tbody');
+    tbody.innerHTML = '';
+
+    if (data.length === 0) {
+
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+
+        td.colSpan = headers.length;
+        td.textContent = 'No data found';
+
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+
+        return;
+    }
+
+    data.forEach(row => {
+
+        const tr = document.createElement('tr');
+
+        headers.forEach((_, index) => {
+
+            const td = document.createElement('td');
+            td.textContent = row[index] || '';
+            tr.appendChild(td);
+        });
+
+        tbody.appendChild(tr);
+    });
+}
+
+function filterData() {
+
+    const inputs = document.querySelectorAll('.filter-row input');
+
+    const filtered = originalData.filter(row => {
+
+        return [...inputs].every((input, index) => {
+
+            const filterValue = input.value.toLowerCase().trim();
+
+            if (!filterValue) return true;
+
+            const cellValue = (row[index] || '').toLowerCase();
+
+            return cellValue.includes(filterValue);
+        });
+    });
+
+    renderRows(filtered);
+}
+
+loadSheet();
+
+</script>
+
+</body>
+</html>
