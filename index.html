@@ -1,146 +1,150 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Google Sheet Search Grid</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
-    body{
-        margin:0;
-        padding:15px;
-        font-family:Arial, sans-serif;
-        background:#f5f5f5;
-    }
+body{
+    margin:0;
+    padding:6px;
+    font-family:system-ui, Arial;
+    background:#f2f2f2;
+}
 
-    .table-wrap{
-        width:100%;
-        overflow:auto;
-        background:#fff;
-        border:1px solid #ccc;
-    }
+/* WRAPPER */
+.table-wrap{
+    width:100%;
+    background:#fff;
+    border:1px solid #ccc;
+    border-radius:6px;
+    overflow:hidden; /* IMPORTANT: no scroll */
+}
 
-    table{
-        width:100%;
-        border-collapse:collapse;
-        min-width:700px;
-    }
+/* TABLE */
+table{
+    width:100%;
+    border-collapse:collapse;
+    table-layout:fixed; /* KEY FIX */
+}
 
-    th, td{
-        border:1px solid #d0d0d0;
-        padding:8px;
-        text-align:left;
-        white-space:nowrap;
-    }
+/* HEADER */
+thead th{
+    background:#f1f1f1;
+    font-size:13px;
+    position:sticky;
+    top:0;
+    z-index:2;
+}
 
-    th{
-        background:#f0f0f0;
-        position:sticky;
-        top:0;
-        z-index:2;
-    }
+/* COLUMN WIDTH CONTROL */
+th:nth-child(1), td:nth-child(1){width:10%;}
+th:nth-child(2), td:nth-child(2){width:60%;}
+th:nth-child(3), td:nth-child(3){width:25%;}
 
-    .filter-row input{
-        width:100%;
-        box-sizing:border-box;
-        padding:6px;
-        border:1px solid #bbb;
-        outline:none;
-    }
 
-    .filter-row input:focus{
-        border-color:#1976d2;
-    }
+/* FILTER */
+.filter-row th{
+    background:#fafafa;
+    position:sticky;
+    top:32px;
+}
 
-    tr:nth-child(even) td{
-        background:#fafafa;
-    }
+/* CELL */
+th, td{
+    border:1px solid #ddd;
+    padding:6px;
+    font-size:12px;
 
-    .loading{
-        padding:20px;
-        text-align:center;
-    }
+    /* KEY FOR MOBILE */
+    word-break:break-word;
+    white-space:normal;
+}
+
+/* INPUT */
+.filter-row input{
+    width:100%;
+    padding:4px;
+    font-size:12px;
+    border:1px solid #bbb;
+    border-radius:3px;
+    box-sizing:border-box;
+}
+
+/* ROW STRIPE */
+tbody tr:nth-child(even){
+    background:#fafafa;
+}
+
+.empty{
+    text-align:center;
+    padding:10px;
+}
 </style>
 </head>
 
 <body>
 
 <div class="table-wrap">
-    <table id="sheetTable">
+    <table>
         <thead id="thead"></thead>
-        <tbody id="tbody">
-            <tr>
-                <td class="loading">Loading...</td>
-            </tr>
-        </tbody>
+        <tbody id="tbody"></tbody>
     </table>
 </div>
 
 <script>
 
-// GOOGLE SHEET CSV LINK
-// Replace gid if needed
-const sheetUrl =
-'https://docs.google.com/spreadsheets/d/1iKSsjRrfpAEYwhMDqV_Xv_AFUc-fnvlc/export?format=csv';
+const sheetUrl = 'https://docs.google.com/spreadsheets/d/1iKSsjRrfpAEYwhMDqV_Xv_AFUc-fnvlc/export?format=csv';
 
-let originalData = [];
+let rawData = [];
 let headers = [];
+let visibleIndexes = [];
 
-async function loadSheet() {
+async function init(){
+    const res = await fetch(sheetUrl);
+    const text = await res.text();
 
-    const response = await fetch(sheetUrl);
-    const csvText = await response.text();
-
-    const rows = parseCSV(csvText);
+    const rows = parseCSV(text);
 
     headers = rows[0];
-    originalData = rows.slice(1);
+    rawData = rows.slice(1);
 
-    createTable();
+    // HIDE LAST 2 COLUMNS
+    visibleIndexes = headers.map((_,i)=>i).slice(0, headers.length - 2);
+
+    buildTable();
 }
 
-function parseCSV(text) {
-
+function parseCSV(text){
     const rows = [];
-    let row = [];
-    let cell = '';
-    let insideQuotes = false;
+    let row = [], cell = '', insideQuotes = false;
 
-    for (let i = 0; i < text.length; i++) {
+    for(let i=0;i<text.length;i++){
+        const c = text[i], next = text[i+1];
 
-        const char = text[i];
-        const next = text[i + 1];
-
-        if (char === '"') {
-
-            if (insideQuotes && next === '"') {
-                cell += '"';
-                i++;
-            } else {
+        if(c === '"'){
+            if(insideQuotes && next === '"'){
+                cell += '"'; i++;
+            }else{
                 insideQuotes = !insideQuotes;
             }
-
-        } else if (char === ',' && !insideQuotes) {
-
-            row.push(cell);
-            cell = '';
-
-        } else if ((char === '\n' || char === '\r') && !insideQuotes) {
-
-            if (cell !== '' || row.length > 0) {
+        }
+        else if(c === ',' && !insideQuotes){
+            row.push(cell); cell='';
+        }
+        else if((c === '\n' || c === '\r') && !insideQuotes){
+            if(cell !== '' || row.length){
                 row.push(cell);
                 rows.push(row);
-                row = [];
-                cell = '';
+                row=[]; cell='';
             }
-
-        } else {
-
-            cell += char;
+        }
+        else{
+            cell += c;
         }
     }
 
-    if (cell !== '' || row.length > 0) {
+    if(cell !== '' || row.length){
         row.push(cell);
         rows.push(row);
     }
@@ -148,75 +152,58 @@ function parseCSV(text) {
     return rows;
 }
 
-function createTable() {
-
+function buildTable(){
     const thead = document.getElementById('thead');
-    const tbody = document.getElementById('tbody');
 
-    thead.innerHTML = '';
-    tbody.innerHTML = '';
-
-    // HEADER ROW
-    const headerRow = document.createElement('tr');
-
-    headers.forEach(h => {
+    // HEADER
+    const tr1 = document.createElement('tr');
+    visibleIndexes.forEach(i=>{
         const th = document.createElement('th');
-        th.textContent = h;
-        headerRow.appendChild(th);
+        th.textContent = headers[i];
+        tr1.appendChild(th);
     });
-
-    thead.appendChild(headerRow);
+    thead.appendChild(tr1);
 
     // FILTER ROW
-    const filterRow = document.createElement('tr');
-    filterRow.className = 'filter-row';
+    const tr2 = document.createElement('tr');
+    tr2.className = 'filter-row';
 
-    headers.forEach((h, index) => {
-
+    visibleIndexes.forEach(()=>{
         const th = document.createElement('th');
-
         const input = document.createElement('input');
-        input.type = 'text';
-        input.placeholder = 'Search';
 
-        input.addEventListener('input', filterData);
+        input.addEventListener('input', filter);
 
         th.appendChild(input);
-        filterRow.appendChild(th);
+        tr2.appendChild(th);
     });
 
-    thead.appendChild(filterRow);
+    thead.appendChild(tr2);
 
-    renderRows(originalData);
+    render(rawData);
 }
 
-function renderRows(data) {
-
+function render(data){
     const tbody = document.getElementById('tbody');
     tbody.innerHTML = '';
 
-    if (data.length === 0) {
-
+    if(!data.length){
         const tr = document.createElement('tr');
         const td = document.createElement('td');
-
-        td.colSpan = headers.length;
-        td.textContent = 'No data found';
-
+        td.colSpan = visibleIndexes.length;
+        td.className = 'empty';
+        td.textContent = 'No data';
         tr.appendChild(td);
         tbody.appendChild(tr);
-
         return;
     }
 
-    data.forEach(row => {
-
+    data.forEach(row=>{
         const tr = document.createElement('tr');
 
-        headers.forEach((_, index) => {
-
+        visibleIndexes.forEach(i=>{
             const td = document.createElement('td');
-            td.textContent = row[index] || '';
+            td.textContent = row[i] || '';
             tr.appendChild(td);
         });
 
@@ -224,28 +211,28 @@ function renderRows(data) {
     });
 }
 
-function filterData() {
-
+function filter(){
     const inputs = document.querySelectorAll('.filter-row input');
 
-    const filtered = originalData.filter(row => {
-
-        return [...inputs].every((input, index) => {
-
-            const filterValue = input.value.toLowerCase().trim();
-
-            if (!filterValue) return true;
-
-            const cellValue = (row[index] || '').toLowerCase();
-
-            return cellValue.includes(filterValue);
+    let result = rawData.filter(row=>{
+        return visibleIndexes.every((colIndex, i)=>{
+            const val = inputs[i].value.toLowerCase().trim();
+            if(!val) return true;
+            return (row[colIndex] || '').toLowerCase().includes(val);
         });
     });
 
-    renderRows(filtered);
+    // 👉 SORT BY "Town" COLUMN (index 2 in visible columns)
+    const townIndex = visibleIndexes[2];
+
+    result.sort((a, b) => {
+        return (a[townIndex] || '').localeCompare(b[townIndex] || '');
+    });
+
+    render(result);
 }
 
-loadSheet();
+init();
 
 </script>
 
